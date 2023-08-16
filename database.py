@@ -1,7 +1,7 @@
 import sqlite3
 from pathlib import Path
 
-ANKI_DB_PATH = Path.home().joinpath(".kobo-to-anki/anki.sqlite")
+ANKI_DB_PATH = Path.home().joinpath(".kobo-to-anki/Anki.sqlite")
 
 NOTES_TABLE_SCHEMA = """
 CREATE TABLE "Notes" (
@@ -23,78 +23,93 @@ PRIMARY KEY("IdWords" AUTOINCREMENT)
 );
 """
 
-
-def exist(db_path: str) -> str:
-    """Is used to check if the anki database exists
+def is_created(db_path: Path):
+    """
+    Is used to check if the anki database exists. 
+    If path and/ or sqlite does not exist then these are created
 
     Parameters
     ----------
     db_path : str
         the path where the anki database should reside
-
-    Returns
-    -------
-    str
-        boolean depending on if the database can be found
     """
-    if db_path.exists():
-        return True
-    else:
+    if not db_path.exists():
         db_path.parent.mkdir(exist_ok=True)
         db_path.touch(exist_ok=True)
-        return False
 
 
-def create_table(db_path: str, schema: str) -> None:
-    """create the table schema
+def open(db_path: Path) -> sqlite3.Connection:
+    """Helper function to open sqlite database
 
     Parameters
     ----------
     db_path : str
-        path to the database
-    schema : str
-        the schema that should be created
+        path to the database to be opened
 
     Returns
     -------
-    _type_
-        return None
+    sqlite3.Connection
+        database connection object
     """
-    con = sqlite3.connect(db_path)
-    cur = con.cursor()
-    cur.execute(schema)
-    con.commit()
-    con.close()
-    return None
+    return sqlite3.connect(db_path)
 
 
-def query(db_path: str) -> tuple:
+def close(db_connection: sqlite3.Connection) -> sqlite3.Connection:
+    """Helper function to close sqlite database
+
+    Parameters
+    ----------
+    db_connection : sqlite3.Connection
+        database connection object
+    Returns
+    -------
+    sqlite3.Connection
+        database connection object
+    """
+    return db_connection.close()
+
+
+def create_table(db_connection: sqlite3.Connection, schema: str):
+    """create the table schema if they do not exists
+
+    Parameters
+    ----------
+    db_connection : sqlite3.Connection
+        database connection object
+
+    schema : str
+        the schema that should be created
+    """
+    try:
+        db_connection.execute(schema)
+        db_connection.commit()
+    except sqlite3.OperationalError:
+        pass
+
+
+def query(db_connection: sqlite3.Connection) -> tuple:
     """used to grab the words from the KoboReader.sqlite
 
     Parameters
     ----------
-    db_path : str
-        path to copied KoboReader.sqlite which will reside in /home/username/.kobo-to-anki
+    db_connection : sqlite3.Connection
+        database to copy. KoboReader.sqlite will reside in /home/username/.kobo-to-anki/
 
     Returns
     -------
     tuple
         a tuple containing all the words from the WordList table within KoboReader.sqlite
     """
-    con = sqlite3.connect(db_path)
-    cur = con.cursor()
-    results = cur.execute("SELECT * FROM WordList").fetchall()
-    con.close()
-    return results
+    return db_connection.execute("SELECT * FROM WordList").fetchall()
 
 
-def word_exist(db_path: str, word: str) -> tuple:
+def word_exist(db_connection: sqlite3.Connection, word: str) -> tuple:
     """Check if the word exists before making a query to merriam webster
 
     Parameters
     ----------
-    db_path : str
-        path to Anki.sqlite database
+    db_connection : sqlite3.Connection
+        database connection object
     word : str
         The headword
 
@@ -103,23 +118,19 @@ def word_exist(db_path: str, word: str) -> tuple:
     tuple
         if nothing is return then word does not exists to a query will be made
     """    
-    con = sqlite3.connect(db_path)
-    cur = con.cursor()
-    result = cur.execute("""
+    return db_connection.execute("""
         SELECT Notes.Id
         FROM Words LEFT JOIN Notes ON Words.HeadWord = Notes.Word
         WHERE Words.Stem = (?) AND Notes.Id IS NOT NULL""", (word,)).fetchone()
-    con.close()
-    return result
 
 
-def update_notes(db_path: str, word: str, note_id: str, book: str, date_added: str) -> None:
+def update_notes(db_connection: sqlite3.Connection, word: str, note_id: str, book: str, date_added: str):
     """Updates the Notes table within the Anki.sqlite database
 
     Parameters
     ----------
-    db_path : str
-        path to the anki.sqlite database
+    db_connection : sqlite3.Connection
+        database connection object
     word : str
         the head word to add
     note_id : str
@@ -128,48 +139,32 @@ def update_notes(db_path: str, word: str, note_id: str, book: str, date_added: s
         the book in which the word was added
     date_added : str
         the date in which that word was added
-
-    Returns
-    -------
-    _type_
-        return nothing
     """    
     book = book.replace("file:///mnt/onboard/", "")
-    con = sqlite3.connect(db_path)
-    cur = con.cursor()
-    cur.execute(
+    db_connection.execute(
         """
         INSERT INTO Notes (Id, Word, Book, DateAdded) VALUES (?,?,?,?)
         """, (
             note_id, word, book, date_added
         )
     )
-    con.commit()
-    con.close()
-    return None
+    db_connection.commit()
 
 
-def update_words(db_path: str, word: str, stems_set: set) -> None:
+def update_words(db_connection: sqlite3.Connection, word: str, stems_set: set):
     """Updates the word table within the Anki.sqlite database
 
     Parameters
     ----------
-    db_path : str
-        path to the anki.sqlite database
+    db_connection : sqlite3.Connection
+        database connection object
     word : str
         the head word
     stems_set : set
         the head word stems
-
-    Returns
-    -------
-    _type_
-        Return nothing
     """ 
-    con = sqlite3.connect(db_path)
-    cur = con.cursor()
     for stem in stems_set:
-        cur.execute(
+        db_connection.execute(
             """
             INSERT INTO Words (HeadWord, Stem) VALUES (?,?)
             """, (
@@ -177,6 +172,4 @@ def update_words(db_path: str, word: str, stems_set: set) -> None:
                 stem
             )
         )
-    con.commit()
-    con.close()
-    return None
+    db_connection.commit()
