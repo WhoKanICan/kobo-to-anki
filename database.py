@@ -1,7 +1,8 @@
 import sqlite3
 from pathlib import Path
-
-ANKI_DB_PATH = Path.home().joinpath(".kobo-to-anki/Anki.sqlite")
+from typing import Tuple
+from collections.abc import Iterable
+import string
 
 NOTES_TABLE_SCHEMA = """
 CREATE TABLE "Notes" (
@@ -23,9 +24,10 @@ PRIMARY KEY("IdWords" AUTOINCREMENT)
 );
 """
 
+
 def is_created(db_path: Path):
     """
-    Is used to check if the anki database exists. 
+    Used to check if the anki database exists.
     If path and/ or sqlite does not exist then these are created
 
     Parameters
@@ -39,7 +41,8 @@ def is_created(db_path: Path):
 
 
 def open(db_path: Path) -> sqlite3.Connection:
-    """Helper function to open sqlite database
+    """
+    Helper function to open sqlite database
 
     Parameters
     ----------
@@ -51,11 +54,14 @@ def open(db_path: Path) -> sqlite3.Connection:
     sqlite3.Connection
         database connection object
     """
-    return sqlite3.connect(db_path)
+    if db_path.exists():
+        return sqlite3.connect(db_path)
+    raise FileNotFoundError(db_path)
 
 
-def close(db_connection: sqlite3.Connection) -> sqlite3.Connection:
-    """Helper function to close sqlite database
+def close(db_connection: sqlite3.Connection):
+    """
+    Helper function to close sqlite database
 
     Parameters
     ----------
@@ -66,11 +72,12 @@ def close(db_connection: sqlite3.Connection) -> sqlite3.Connection:
     sqlite3.Connection
         database connection object
     """
-    return db_connection.close()
+    db_connection.close()
 
 
 def create_table(db_connection: sqlite3.Connection, schema: str):
-    """create the table schema if they do not exists
+    """
+    Create the table schema if they do not exists
 
     Parameters
     ----------
@@ -87,8 +94,11 @@ def create_table(db_connection: sqlite3.Connection, schema: str):
         pass
 
 
-def query(db_connection: sqlite3.Connection) -> tuple:
-    """used to grab the words from the KoboReader.sqlite
+def query_world_list(
+    db_connection: sqlite3.Connection,
+) -> Iterable[Tuple[str, str, str, str]]:
+    """
+    Used to grab the words from the KoboReader.sqlite
 
     Parameters
     ----------
@@ -98,13 +108,23 @@ def query(db_connection: sqlite3.Connection) -> tuple:
     Returns
     -------
     tuple
-        a tuple containing all the words from the WordList table within KoboReader.sqlite
+        a tuple containing all the words from the WordList table
     """
-    return db_connection.execute("SELECT * FROM WordList").fetchall()
+    queried_words = db_connection.execute("SELECT * FROM WordList").fetchall()
+
+    for idx, (word, book, _, date_added) in enumerate(queried_words):
+        word = word.lower().strip(string.punctuation)
+        book = book.replace("file:///mnt/onboard/", "")
+        queried_words[idx] = word, book, _, date_added
+    # if word list is not enabled or no words are present an empty list will be returned
+    if not queried_words:
+        raise Exception("No words can be found in My Words")
+    return queried_words
 
 
 def word_exist(db_connection: sqlite3.Connection, word: str) -> tuple:
-    """Check if the word exists before making a query to merriam webster
+    """
+    Check if the word exists before making a query to merriam webster
 
     Parameters
     ----------
@@ -117,15 +137,26 @@ def word_exist(db_connection: sqlite3.Connection, word: str) -> tuple:
     -------
     tuple
         if nothing is return then word does not exists to a query will be made
-    """    
-    return db_connection.execute("""
+    """
+    return db_connection.execute(
+        """
         SELECT Notes.Id
         FROM Words LEFT JOIN Notes ON Words.HeadWord = Notes.Word
-        WHERE Words.Stem = (?) AND Notes.Id IS NOT NULL""", (word,)).fetchone()
+        WHERE Words.Stem = (?) AND Notes.Id IS NOT NULL
+        """,
+        (word,),
+    ).fetchone()
 
 
-def update_notes(db_connection: sqlite3.Connection, word: str, note_id: str, book: str, date_added: str):
-    """Updates the Notes table within the Anki.sqlite database
+def update_notes(
+    db_connection: sqlite3.Connection,
+    word: str,
+    note_id: str,
+    book: str,
+    date_added: str,
+):
+    """
+    Updates the Notes table within the Anki.sqlite database
 
     Parameters
     ----------
@@ -139,20 +170,19 @@ def update_notes(db_connection: sqlite3.Connection, word: str, note_id: str, boo
         the book in which the word was added
     date_added : str
         the date in which that word was added
-    """    
-    book = book.replace("file:///mnt/onboard/", "")
+    """
     db_connection.execute(
         """
         INSERT INTO Notes (Id, Word, Book, DateAdded) VALUES (?,?,?,?)
-        """, (
-            note_id, word, book, date_added
-        )
+        """,
+        (note_id, word, book, date_added),
     )
     db_connection.commit()
 
 
 def update_words(db_connection: sqlite3.Connection, word: str, stems_set: set):
-    """Updates the word table within the Anki.sqlite database
+    """
+    Updates the word table within the Anki.sqlite database
 
     Parameters
     ----------
@@ -162,14 +192,12 @@ def update_words(db_connection: sqlite3.Connection, word: str, stems_set: set):
         the head word
     stems_set : set
         the head word stems
-    """ 
+    """
     for stem in stems_set:
         db_connection.execute(
             """
             INSERT INTO Words (HeadWord, Stem) VALUES (?,?)
-            """, (
-                word,
-                stem
-            )
+            """,
+            (word, stem),
         )
     db_connection.commit()

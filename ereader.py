@@ -1,30 +1,26 @@
-import ftplib
 from pathlib import Path
-import os
+import subprocess
 
 
-IP_ADDRESS = os.environ.get("EREADER_IP_ADDRESS")
-EREADER_DB_PATH = Path.home().joinpath(".kobo-to-anki/KoboReader.sqlite")
-
-def get_db() -> bool:
-    """copy the KoboReader.sqlite database from the reader
+def get_db_path() -> Path:
+    """
+    Return the KoboReader.sqlite path from the mount path
 
     Returns
     -------
-    bool
-        boolean returned depends on success of copying the KoboReader.sqlite database
+    Path
+        to the KoboReader.sqlite db path
+
+    Raises
+    ------
+    Exception
+        if Kobo reader can not be found
     """
-    ereader = ftplib.FTP()
-    try:
-        ereader.connect(IP_ADDRESS)
-        ereader.login("root","")
-        with open(EREADER_DB_PATH, 'wb') as fp:
-            ereader.retrbinary("RETR KoboReader.sqlite", fp.write)
-        ereader.quit()
-        return True
-    except ftplib.all_errors as e:
-        print(e)
-        return False
-    
-if __name__ == "__main__":
-    get_db()
+    db_path = subprocess.getoutput(
+        "df -h --output=target | grep -P '.*KOBOeReader'",
+    )
+    if not db_path:
+        raise Exception(
+            "Kobo Reader can not be found. Ensure device is plugged in and mounted"
+        )
+    return Path(db_path).joinpath(".kobo/KoboReader.sqlite")

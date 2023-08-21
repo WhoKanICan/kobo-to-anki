@@ -2,13 +2,13 @@ import json
 import os
 import requests
 
+from requests.adapters import HTTPAdapter, Retry
+
 ANKICONNECT_URL = "http://localhost:8765"
 DECK_NAME = "Kobo_to_anki"
 MODEL_NAME = "Word"
 
-create_deck_params = {
-    'deck': DECK_NAME
-}
+create_deck_params = {"deck": DECK_NAME}
 
 create_model_params = {
     "modelName": MODEL_NAME,
@@ -19,58 +19,50 @@ create_model_params = {
         {
             "Name": "Card 1",
             "Front": "{{Front}}",
-            "Back": "{{FrontSide}}  <hr id=answer>  <div class=back> {{Back}} </div>"
+            "Back": "{{FrontSide}}  <hr id=answer>  <div class=back> {{Back}} </div>",
         }
-    ]
+    ],
 }
 
 add_note_params = {
     "note": {
         "deckName": DECK_NAME,
         "modelName": MODEL_NAME,
-        "fields": {
-            "Front": "",
-            "Back": ""
-        },
+        "fields": {"Front": "", "Back": ""},
         "options": {
             "allowDuplicate": False,
             "duplicateScope": "deck",
             "duplicateScopeOptions": {
                 "deckName": DECK_NAME,
                 "checkChildren": False,
-                "checkAllModels": False
-            }
+                "checkAllModels": False,
+            },
         },
-        "tags": [
-            "word"
-        ],
-        "audio": [
-        ]
+        "tags": ["word"],
+        "audio": [],
     }
 }
 
-model_names_params = {
-    "action": "modelNames",
-    "version": 6
-}
+model_names_params = {"action": "modelNames", "version": 6}
 
-def status() -> bool:
-    """Attempts to see if anki-connect is installed on the host machine
 
-    Returns
-    -------
-    bool
-        Depending on the status of anki-connect a boolean will be returned
+def status():
     """
+    Attempts to see if anki-connect is installed on the host machine
+    """
+    s = requests.Session()
+    retries = Retry(total=3, backoff_factor=1)
+    s.mount("http://", HTTPAdapter(max_retries=retries))
     try:
-        requests.get(ANKICONNECT_URL, timeout=3)
-        return True
-    except requests.exceptions.ConnectionError:
-        return False
+        s.get(ANKICONNECT_URL)
+    except requests.exceptions.RequestException:
+        raise
 
 
 def invoke(action: str, **params: dict) -> dict:
-    """Invokes actions currently supported by anki-connect. More details about the supported actions can be found on the anki-connect project
+    """
+    Invokes actions currently supported by anki-connect.
+    More details about the supported actions can be found on the anki-connect project
 
     Parameters
     ----------
@@ -93,22 +85,23 @@ def invoke(action: str, **params: dict) -> dict:
     Exception
         error not listed
     """
-    payload = {'action': action, 'params': params, 'version': 6}
-    requestJson = json.dumps(payload).encode('utf-8')
-    response = requests.get(ANKICONNECT_URL, data=requestJson).json()
+    payload = {"action": action, "params": params, "version": 6}
+    request_json = json.dumps(payload).encode("utf-8")
+    response = requests.get(ANKICONNECT_URL, data=request_json).json()
     if len(response) != 2:
-        raise Exception('response has an unexpected number of fields')
-    if 'error' not in response:
-        raise Exception('response is missing required error field')
-    if 'result' not in response:
-        raise Exception('response is missing required result field')
-    if response['error'] is not None:
-        raise Exception(response['error'])
-    return response['result']
+        raise Exception("response has an unexpected number of fields")
+    if "error" not in response:
+        raise Exception("response is missing required error field")
+    if "result" not in response:
+        raise Exception("response is missing required result field")
+    if response["error"] is not None:
+        raise Exception(response["error"])
+    return response["result"]
 
 
 def create_note(data: dict) -> dict:
-    """Creates note template that is used with the addNote action supported by anki-connect
+    """
+    Creates note template using addNote action supported by anki-connect
 
     Parameters
     ----------
@@ -118,7 +111,7 @@ def create_note(data: dict) -> dict:
     Returns
     -------
     dict
-        structured dict to match the sample request format for the addNote action supported by anki-connect
+        structured dict to match the request format for addNote action
     """
     template = add_note_params
     front = data["word"]
@@ -130,16 +123,10 @@ def create_note(data: dict) -> dict:
     for v in word_data.values():
         functional_label = v["functional_label"]
         definition_list = v["definition"]
-        audio_url = v['audio_url']
+        audio_url = v["audio_url"]
         if audio_url:
             file_name = os.path.basename(audio_url)
-            audio.append(
-                {
-                    "url": audio_url,
-                    "filename": file_name,
-                    "fields": "Back"
-                }
-            )
+            audio.append({"url": audio_url, "filename": file_name, "fields": "Back"})
             back += f"<p><strong>{functional_label} [sound:{file_name}]</strong></p>"
         else:
             back += f"<p><strong>{functional_label}</strong></p>"
@@ -155,25 +142,13 @@ def create_note(data: dict) -> dict:
     return template
 
 
-def setup() -> bool:
-    """Ensures that anki has the correct deck and model available. If not, this will be created
-
-    Returns
-    -------
-    bool
-        True value is returned once check has been performed
+def setup():
     """
-    deck_names = invoke('deckNames')
-    model_names = invoke('modelNames')
+    Ensures that anki has the correct deck and model available.
+    If not, this will be created
+    """
+    if MODEL_NAME not in invoke("modelNames"):
+        invoke("createModel", **create_model_params)
 
-    if MODEL_NAME in model_names:
-        pass
-    else:
-        invoke('createModel', **create_model_params)
-
-    if DECK_NAME in deck_names:
-        pass
-    else:
-        invoke('createDeck', **create_deck_params)
-
-    return True
+    if DECK_NAME not in invoke("deckNames"):
+        invoke("createDeck", **create_deck_params)
