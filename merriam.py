@@ -4,6 +4,7 @@ import requests
 
 API_KEY = os.environ.get("MERRIAM_WEBSTER_KEY")
 
+
 def get_word(word: str) -> dict[str, list]:
     """query to merriam webster api service with the word in question
 
@@ -24,23 +25,23 @@ def get_word(word: str) -> dict[str, list]:
     SystemExit
         Other errors to do with the query
     """
-    merriam_url = f"https://www.dictionaryapi.com/api/v3/references/collegiate/json/{word}"
+    merriam_url = (
+        f"https://www.dictionaryapi.com/api/v3/references/collegiate/json/{word}"
+    )
     try:
-        response = requests.get(merriam_url, params={"key": API_KEY})        
+        response = requests.get(merriam_url, params={"key": API_KEY})
         if response.text == "Invalid API key. Not subscribed for this reference.":
-           raise SystemExit(response.text)
+            raise SystemExit(response.text)
         else:
-            word_data = {
-                "word" : word,
-                "response": response.json()
-            }
+            word_data = {"word": word, "response": response.json()}
             return _validate(word_data)
-    except requests.exceptions.HTTPError as err:
-        raise SystemExit(err)
+    except requests.exceptions.HTTPError:
+        raise
 
 
 def _validate(word_data: dict[str, list]) -> dict[str, list]:
-    """Checks to see if the word is a stem or head word
+    """
+    Checks to see if the word is a stem or head word
 
     Parameters
     ----------
@@ -50,10 +51,13 @@ def _validate(word_data: dict[str, list]) -> dict[str, list]:
     Returns
     -------
     dict[str, list]
-        returns the same structure as the get_word() function. Key value where the key is the word and the value is the response from merriam webster
+        returns the same structure as the get_word() function.
+        Key value is the word and the value is the response from merriam webster
     """
-    word = word_data['word']
-    headword = word_data['response'][0]['hwi']['hw'].translate(str.maketrans('', '', string.punctuation))
+    word = word_data["word"]
+    headword = word_data["response"][0]["hwi"]["hw"].translate(
+        str.maketrans("", "", string.punctuation)
+    )
     if word == headword:
         return word_data
     else:
@@ -61,7 +65,8 @@ def _validate(word_data: dict[str, list]) -> dict[str, list]:
 
 
 def parse(word_data: dict[str, list]) -> dict[str, list, list]:
-    """Extracts the relevant information to compose the notes in anki
+    """
+    Extracts the relevant information to compose the notes in anki
 
     Parameters
     ----------
@@ -71,7 +76,9 @@ def parse(word_data: dict[str, list]) -> dict[str, list, list]:
     Returns
     -------
     dict[str, list, list]
-        head word, the information needed to compose the notes in anki, list of stem words related to the head word
+        head word
+        the information needed to compose the notes in anki
+        list of stem words related to the head word
     """
     word = word_data["word"]
     response = word_data["response"]
@@ -88,19 +95,16 @@ def parse(word_data: dict[str, list]) -> dict[str, list, list]:
                 word_data[idx] = {
                     "functional_label": functional_label,
                     "definition": short_def,
-                    "audio_url": _audio(entry)
+                    "audio_url": _audio(entry),
                 }
     # package up data to be returned
-    parsed_data = {
-        "word": word,
-        "word_data": word_data,
-        "stem_set": stem_set
-    }
+    parsed_data = {"word": word, "word_data": word_data, "stem_set": stem_set}
     return parsed_data
 
 
-def _audio(entry: list) -> None | str:
-    """grabs the audio file link if available 
+def _audio(entry: list) -> str:
+    """
+    Get the audio file link if available
 
     Parameters
     ----------
@@ -112,9 +116,9 @@ def _audio(entry: list) -> None | str:
     None | str
         returns audio url if available otherwise returns None if not found
     """
-    prs = entry['hwi'].get('prs')
+    prs = entry["hwi"].get("prs")
     if prs:
-        file_name = prs[0]['sound']['audio']
+        file_name = prs[0]["sound"]["audio"]
         # set the correct subdirectory based on audio name
         subdirectory = ""
         if file_name.startswith("bix"):
@@ -128,4 +132,3 @@ def _audio(entry: list) -> None | str:
 
         audio_url = f"https://media.merriam-webster.com/audio/prons/en/us/mp3/{subdirectory}/{file_name}.mp3"
         return audio_url
-    return None
